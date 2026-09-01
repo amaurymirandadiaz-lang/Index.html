@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luis AI</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; overflow: hidden; touch-action: manipulation; }
+        canvas { background: #000; }
+        #txt { margin-top: 20px; font-size: 18px; color: #00d2ff; text-align: center; padding: 0 20px; }
+    </style>
+    <!-- Script oficial de Puter -->
+    <script src="https://js.puter.com/v2/"></script>
+</head>
+<body>
+    <canvas id="c" width="300" height="300"></canvas>
+    <div id="txt">Toca la pantalla para hablar con Luis</div>
+
+    <script>
+        const c = document.getElementById("c"), ctx = c.getContext("2d"), txt = document.getElementById("txt");
+        let estado = "normal", boca = 0, msg = "Toca la pantalla para hablar";
+        let miProvincia = "tu zona actual";
+        let historialConversacion = [];
+
+        // Obtener la provincia automáticamente
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(async p => {
+                let lat = p.coords.latitude;
+                let lon = p.coords.longitude;
+                try {
+                    let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`);
+                    let data = await res.json();
+                    if(data && data.address) {
+                        miProvincia = data.address.state || data.address.province || data.address.city || "tu zona actual";
+                    }
+                } catch(e) {}
+            }, () => {});
+        }
+
+        const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let rec = Rec ? new Rec() : null;
+
+        if(rec) {
+            rec.lang = 'es-ES';
+            rec.interimResults = false;
+
+            rec.onresult = async e => {
+                let userText = e.results[0][0].transcript;
+                msg = `Tú: ${userText}`;
+                estado = "pensando";
+                
+                try {
+                    historialConversacion.push(`Usuario: ${userText}`);
+                    if (historialConversacion.length > 6) historialConversacion.shift();
+
+                    const promptSistema = `Eres Luis, un asistente virtual inteligente, amable, claro y directo. El usuario se encuentra en la provincia o región de: "${miProvincia}". Si te pregunta por el clima o datos de su zona, dáselos basados en esta ubicación. Historial reciente: ${historialConversacion.join(" | ")}. Responde de forma natural, fluida y muy breve (máximo dos frases):`;
+
+                    puter.ai.chat(promptSistema, {
+                        model: "openai/gpt-5.4-nano"
+                    }).then(response => {
+                        historialConversacion.push(`Luis: ${response}`);
+                        hablar(response);
+                    }).catch(err => {
+                        hablar("Tuve un pequeño problema procesando eso, ¿me lo repites?");
+                    });
+
+                } catch(err) {
+                    estado = "normal";
+                    msg = "Error de conexión.";
+                }
+            };
+
+            rec.onerror = () => { 
+                estado = "normal"; 
+                msg = "No te escuché bien. Toca de nuevo."; 
+            };
+
+            rec.onend = () => {
+                if(estado === "escuchando") estado = "normal";
+            };
+        }
+
+        window.onclick = () => {
+            if(estado === "normal" && rec) {
+                try {
+                    rec.start();
+                    estado = "escuchando";
+                    msg = "Escuchando...";
+                } catch(err){}
+            }
+        };
+
+        function hablar(t) {
+            msg = t; 
+            estado = "hablando";
+            let s = new SpeechSynthesisUtterance(t);
+            s.lang = 'es-ES';
+            s.rate = 1.0;
+
+            s.onend = () => {
+                estado = "normal";
+                msg = "Toca la pantalla para hablar";
+            };
+
+            window.speechSynthesis.speak(s);
+        }
+
+        function animar() {
+            ctx.clearRect(0, 0, 300, 300);
+            let color = estado === "escuchando" ? "#ff3333" : (estado === "pensando" ? "#33cc33" : "#00d2ff");
+            
+            // Ojos
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(100, 120, 30, 0, 7); ctx.arc(200, 120, 30, 0, 7); ctx.fill();
+            ctx.fillStyle = "#000";
+            ctx.beginPath(); ctx.arc(100, 120, 10, 0, 7); ctx.arc(200, 120, 10, 0, 7); ctx.fill();
+
+            // Boca animada
+            ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.fillStyle = color;
+            if(estado === "hablando") {
+                boca = boca === 10 ? 25 : 10;
+                ctx.beginPath(); ctx.ellipse(150, 200, 25, boca, 0, 0, 7); ctx.fill();
+            } else {
+                ctx.beginPath(); ctx.arc(150, 190, 25, 0, Math.PI); ctx.stroke();
+            }
+
+            txt.innerText = msg;
+            requestAnimationFrame(animar);
+        }
+        animar();
+    </script>
+</body>
+</html>
